@@ -1,0 +1,6 @@
+MIQSM_Module\.venv  
+MIQSM_Module\.venv_backup
+MIQSM_Module\__pycache__ 
+MIQSM_Module\logs
+_last_uname.txt
+database\
