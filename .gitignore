@@ -1,6 +1,16 @@
-MIQSM_Module\.venv  
-MIQSM_Module\.venv_backup
-MIQSM_Module\__pycache__ 
-MIQSM_Module\logs
+# Python caches
+**/__pycache__/
+**/*.pyc
+
+# Logs
+**/logs/
+
+# Virtual environments
+**/.venv/
+**/.venv_backup/
+
+# Misc / temp files
 _last_uname.txt
-database\
+
+# Database dumps
+database/

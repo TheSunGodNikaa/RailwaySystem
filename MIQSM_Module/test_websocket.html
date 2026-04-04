@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>WebSocket Test</h1>
+    <button onclick="test()">Test Initialize</button>
+    <div id="output"></div>
+
+    <script>
+        const socket = io('http://localhost:5000');
+        const output = document.getElementById('output');
+
+        function log(msg) {
+            console.log(msg);
+            output.innerHTML += '<p>' + msg + '</p>';
+        }
+
+        socket.on('connect', () => {
+            log('✅ Connected! Socket ID: ' + socket.id);
+        });
+
+        socket.on('connect_error', (error) => {
+            log('❌ Connection Error: ' + error);
+        });
+
+        socket.onAny((eventName, data) => {
+            log('📨 Event: ' + eventName + ' | Data: ' + JSON.stringify(data));
+        });
+
+        function test() {
+            log('🔧 Sending initialize_system...');
+            socket.emit('initialize_system');
+        }
+    </script>
+</body>
+</html>

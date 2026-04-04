@@ -1,0 +1,11 @@
+2026-04-02 00:26:25,358 - MIQSM - INFO - ============================================================
+2026-04-02 00:26:25,358 - MIQSM - INFO - MIQSM MODULE INITIALIZED
+2026-04-02 00:26:25,359 - MIQSM - INFO - ============================================================
+2026-04-02 00:26:25,359 - MIQSM - INFO - Initializing queues...
+2026-04-02 00:26:25,359 - MIQSM - INFO - Initialized Queue 0 with max size 1000
+2026-04-02 00:26:25,359 - MIQSM - INFO - Initialized Queue 1 with max size 1000
+2026-04-02 00:26:25,359 - MIQSM - INFO - Initialized Queue 2 with max size 1000
+2026-04-02 00:26:25,360 - MIQSM - INFO - Initialized Queue 3 with max size 1000
+2026-04-02 00:26:25,360 - MIQSM - INFO - Initialized Queue 4 with max size 1000
+2026-04-02 00:26:25,360 - MIQSM - INFO - Successfully initialized 5 queues
+2026-04-02 00:26:25,360 - MIQSM - DEBUG - Queue states maintained: [{'queue_id': 0, 'current_size': 0, 'total_added': 0, 'total_served': 0, 'avg_waiting_time': 0.0}, {'queue_id': 1, 'current_size': 0, 'total_added': 0, 'total_served': 0, 'avg_waiting_time': 0.0}, {'queue_id': 2, 'current_size': 0, 'total_added': 0, 'total_served': 0, 'avg_waiting_time': 0.0}, {'queue_id': 3, 'current_size': 0, 'total_added': 0, 'total_served': 0, 'avg_waiting_time': 0.0}, {'queue_id': 4, 'current_size': 0, 'total_added': 0, 'total_served': 0, 'avg_waiting_time': 0.0}]
