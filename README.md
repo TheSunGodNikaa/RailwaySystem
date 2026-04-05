@@ -17,45 +17,36 @@ The Railway Reservation System simulates a real-world railway booking platform, 
 
 ---
 
-## ✨ Features
+## ✨ Features (Updated for v1.1)
 
 ### 👤 Passenger Module
 
 * 🔍 Live train search (no page reload)
 * 🎟️ Ticket booking with seat selection
-* 📜 Booking history tracking
+* 📜 Booking history (now shows base fare and passenger summary)
 * ❌ Cancellation requests
-* 🆘 Help Center support
-
----
+* 🆘 Help center
+* 🏷️ **Passenger-wise concession flow**:
+  - Supports age and military status per passenger
+  - Applies concession rules before class selection
+  - Shows per-passenger fare breakdown
+  - Prevents selecting more/fewer seats than passenger count
 
 ### 🧑‍💼 Clerk Module
 
 * 📊 Dashboard with real-time stats
 * 🧾 Manual booking entry
 * 👀 Live booking monitor
-* 📥 View and manage passenger requests
+* 📥 View and manage requests
 * 🔓 Seat release functionality
 * 🚪 Secure login/logout system
 
----
+### 🛠️ Core System Updates in v1.1
 
-### 🛠️ Admin Module
-
-* 📈 System overview dashboard
-* 🚆 Fleet management (sort by busiest trains)
-* 👨‍💻 Staff management (track active clerks)
-* 🔗 Integration with **MIQSM Python module**
-* 🔐 Role-based authentication and access control
-
----
-
-### ⚙️ Core System Features
-
-* 🔒 **Two-Phase Locking (2PL)** for concurrency control
-* 💾 Oracle 21c database integration
-* 🔄 Real-time updates and state handling
-* 🧠 Python-based queue and request simulation
+* TwoPL booking now fully integrates **manifest-based seat allocation**
+* **Shared discount and pricing logic** centralized in `TwoPL/train_data.php`
+* Booking server-side validation ensures seat-count matches passenger manifest
+* Booking history now includes **concession breakdown**
 
 ---
 
