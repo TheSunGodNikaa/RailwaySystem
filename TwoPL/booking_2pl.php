@@ -24,18 +24,23 @@ $journeyDate = trim($_POST['journey_date'] ?? ($_SESSION['active_booking']['jour
 $seat_no_raw = trim($_POST['seat_no'] ?? '');
 $selectedSource = trim($_POST['source'] ?? ($_SESSION['active_booking']['source'] ?? ''));
 $selectedDestination = trim($_POST['destination'] ?? ($_SESSION['active_booking']['destination'] ?? ''));
-$seatPrice = (float) ($_POST['seat_price'] ?? 0);
+$passengerManifest = railwayNormalizePassengerManifest($_POST['passengers'] ?? ($_SESSION['active_booking']['passengers'] ?? []));
 $train = railwayGetTrainById($conn, $train_id);
 $classCatalog = railwayGetClassCatalog((float) ($train['PRICE'] ?? 0));
 $classLabel = $classCatalog[$compartment]['label'] ?? $compartment;
-$seatPrice = $seatPrice > 0 ? $seatPrice : ($classCatalog[$compartment]['price'] ?? 0);
+$baseFare = (float) ($classCatalog[$compartment]['price'] ?? 0);
+$pricing = railwayCalculateManifestPricing($baseFare, $passengerManifest);
 
-if ($train_id === '' || empty($seat_no_raw) || !$train) {
+if ($train_id === '' || empty($seat_no_raw) || !$train || empty($pricing['passengers'])) {
     header("Location: index.php");
     exit;
 }
 
 $seat_list = array_values(array_filter(array_map('trim', explode(",", $seat_no_raw))));
+if (count($seat_list) !== (int) $pricing['passenger_count']) {
+    die("Seat selection count does not match the passenger count.");
+}
+
 $tid = "TXN" . rand(100000, 999999);
 $allLocked = true;
 
@@ -64,6 +69,13 @@ foreach ($seat_list as $seat_no) {
 
 logTransaction($conn, $tid, "COMMITTED");
 
+$passengerAssignments = [];
+foreach ($pricing['passengers'] as $index => $passenger) {
+    $passengerAssignments[] = array_merge($passenger, [
+        'seat_no' => $seat_list[$index] ?? '',
+    ]);
+}
+
 $historyPayload = [
     'user_id' => $_SESSION['user_id'],
     'transaction_id' => $tid,
@@ -77,8 +89,10 @@ $historyPayload = [
     'compartment' => $compartment,
     'seats' => implode(', ', $seat_list),
     'seat_count' => count($seat_list),
-    'fare_per_seat' => $seatPrice,
-    'total_amount' => $seatPrice * count($seat_list),
+    'base_fare' => $baseFare,
+    'fare_per_seat' => $pricing['average_final_fare'],
+    'total_amount' => $pricing['final_total'],
+    'passenger_summary' => railwayBuildPassengerSummary($passengerAssignments),
     'journey_date' => $journeyDate,
     'booking_status' => 'CONFIRMED',
 ];
@@ -87,6 +101,7 @@ railwayInsertPassengerBookingHistory($conn, $historyPayload);
 oci_commit($conn);
 releaseLocks($conn, $tid);
 unset($_SESSION['pending_booking']);
+$_SESSION['active_booking']['passengers'] = $pricing['passengers'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -95,14 +110,30 @@ unset($_SESSION['pending_booking']);
     <title>Booking Confirmed | E-Ticket</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        :root{--primary:#2563eb;--success:#059669;--bg:#f8fafc}
+        :root{--primary:#2563eb;--success:#059669;--bg:#f8fafc;--line:#e2e8f0;--muted:#64748b}
         body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);margin:0;padding:40px;display:flex;flex-direction:column;align-items:center}
-        .stepper{display:flex;gap:40px;margin-bottom:40px;opacity:.7}.ticket{background:#fff;width:100%;max-width:760px;border-radius:24px;overflow:hidden;box-shadow:0 25px 50px -12px rgba(0,0,0,.08)}.header{background:var(--primary);color:#fff;padding:30px;display:flex;justify-content:space-between;align-items:center}.body{padding:40px}
-        .row{display:flex;justify-content:space-between;gap:20px}.pnr,.grid{display:grid;gap:20px}.pnr{grid-template-columns:1fr 1fr;border-bottom:2px dashed #e2e8f0;padding-bottom:28px;margin-bottom:28px}.grid{grid-template-columns:1fr 1fr 1fr;margin-bottom:28px}.label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:1px;font-weight:700;display:block;margin-bottom:5px}.value{font-size:18px;font-weight:700;color:#1e293b}.seats{background:#f8fafc;padding:20px;border-radius:16px}.seatbadges{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}.seat{background:#dcfce7;color:#166534;padding:6px 14px;border-radius:8px;font-weight:700;border:1px solid #bbf7d0}.actions{margin-top:30px;display:flex;gap:15px;width:100%;max-width:760px}.btn{flex:1;padding:16px;border-radius:12px;font-weight:700;text-decoration:none;text-align:center;border:none;cursor:pointer}.secondary{background:#fff;color:var(--primary);border:2px solid var(--primary)}.primary{background:var(--primary);color:#fff}
+        .stepper{display:flex;gap:40px;margin-bottom:40px;opacity:.7}
+        .ticket{background:#fff;width:100%;max-width:860px;border-radius:24px;overflow:hidden;box-shadow:0 25px 50px -12px rgba(0,0,0,.08)}
+        .header{background:var(--primary);color:#fff;padding:30px;display:flex;justify-content:space-between;align-items:center}
+        .body{padding:40px}
+        .pnr,.grid{display:grid;gap:20px}
+        .pnr{grid-template-columns:1fr 1fr;border-bottom:2px dashed var(--line);padding-bottom:28px;margin-bottom:28px}
+        .grid{grid-template-columns:1fr 1fr 1fr;margin-bottom:28px}
+        .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:700;display:block;margin-bottom:5px}
+        .value{font-size:18px;font-weight:700;color:#1e293b}
+        .seats,.manifest{background:#f8fafc;padding:20px;border-radius:16px}
+        .seatbadges{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+        .seat{background:#dcfce7;color:#166534;padding:6px 14px;border-radius:8px;font-weight:700;border:1px solid #bbf7d0}
+        .manifest-row{display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid var(--line)}
+        .manifest-row:first-child{border-top:none;padding-top:0}
+        .actions{margin-top:30px;display:flex;gap:15px;width:100%;max-width:860px}
+        .btn{flex:1;padding:16px;border-radius:12px;font-weight:700;text-decoration:none;text-align:center;border:none;cursor:pointer}
+        .secondary{background:#fff;color:var(--primary);border:2px solid var(--primary)}
+        .primary{background:var(--primary);color:#fff}
     </style>
 </head>
 <body>
-    <div class="stepper"><div>OK Class</div><div>OK Seats</div><div style="color:var(--success)">OK Confirmed</div></div>
+    <div class="stepper"><div>OK Manifest</div><div>OK Seats</div><div style="color:var(--success)">OK Confirmed</div></div>
     <div class="ticket">
         <div class="header">
             <div><h3 style="margin:0">Electronic Reservation Slip</h3><small style="opacity:.85">Indian Railways - IRCTC Authorized</small></div>
@@ -124,13 +155,28 @@ unset($_SESSION['pending_booking']);
                 <div><span class="label">Arrival</span><span class="value"><?php echo htmlspecialchars($train['ARRIVAL_TIME']); ?></span></div>
             </div>
             <div class="grid">
-                <div><span class="label">Seats</span><span class="value"><?php echo htmlspecialchars(implode(', ', $seat_list)); ?></span></div>
-                <div><span class="label">Fare Per Seat</span><span class="value">Rs. <?php echo htmlspecialchars(number_format($seatPrice, 2)); ?></span></div>
-                <div><span class="label">Total Paid</span><span class="value">Rs. <?php echo htmlspecialchars(number_format($seatPrice * count($seat_list), 2)); ?></span></div>
+                <div><span class="label">Passengers</span><span class="value"><?php echo htmlspecialchars((string) $pricing['passenger_count']); ?></span></div>
+                <div><span class="label">Base Fare Per Passenger</span><span class="value">Rs. <?php echo htmlspecialchars(number_format($baseFare, 2)); ?></span></div>
+                <div><span class="label">Total Paid</span><span class="value">Rs. <?php echo htmlspecialchars(number_format((float) $pricing['final_total'], 2)); ?></span></div>
             </div>
             <div class="seats">
-                <span class="label">Passenger Berth Details</span>
+                <span class="label">Seat Allocation</span>
                 <div class="seatbadges"><?php foreach ($seat_list as $s): ?><div class="seat">Seat <?php echo htmlspecialchars($s); ?></div><?php endforeach; ?></div>
+            </div>
+            <div class="manifest" style="margin-top:22px;">
+                <span class="label">Passenger Fare Breakdown</span>
+                <?php foreach ($passengerAssignments as $passenger): ?>
+                    <div class="manifest-row">
+                        <div>
+                            <strong style="display:block;color:#1e293b"><?php echo htmlspecialchars($passenger['name']); ?></strong>
+                            <span style="color:var(--muted)">Seat <?php echo htmlspecialchars($passenger['seat_no']); ?> | Age <?php echo htmlspecialchars((string) $passenger['age']); ?> | <?php echo htmlspecialchars($passenger['discount_label']); ?></span>
+                        </div>
+                        <div style="text-align:right">
+                            <strong style="display:block;color:#1e293b">Rs. <?php echo htmlspecialchars(number_format((float) $passenger['final_fare'], 2)); ?></strong>
+                            <span style="color:var(--muted)">Saved Rs. <?php echo htmlspecialchars(number_format((float) $passenger['discount_amount'], 2)); ?></span>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
             </div>
         </div>
     </div>

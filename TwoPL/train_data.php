@@ -142,6 +142,138 @@ function railwayGetClassCatalog(float $basePrice): array
     ];
 }
 
+function railwayNormalizePassengerManifest($payload): array
+{
+    if (is_string($payload) && trim($payload) !== '') {
+        $decoded = json_decode($payload, true);
+        $payload = is_array($decoded) ? $decoded : [];
+    }
+
+    if (!is_array($payload)) {
+        return [];
+    }
+
+    $manifest = [];
+    foreach ($payload as $index => $passenger) {
+        if (!is_array($passenger)) {
+            continue;
+        }
+
+        $name = trim((string) ($passenger['name'] ?? ''));
+        $age = (int) ($passenger['age'] ?? 0);
+        $isMilitary = strtoupper(trim((string) ($passenger['is_military'] ?? 'N')));
+        $gender = trim((string) ($passenger['gender'] ?? ''));
+
+        if ($name === '' || $age < 0) {
+            continue;
+        }
+
+        $manifest[] = [
+            'name' => $name,
+            'age' => $age,
+            'gender' => $gender,
+            'is_military' => $isMilitary === 'Y' ? 'Y' : 'N',
+            'sequence' => count($manifest) + 1,
+        ];
+    }
+
+    return $manifest;
+}
+
+function railwayEncodePassengerManifest(array $manifest): string
+{
+    return json_encode(array_values($manifest), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '[]';
+}
+
+function railwayResolvePassengerDiscount(int $age, string $isMilitary = 'N'): array
+{
+    $discountPercent = 0;
+    $discountType = 'NONE';
+    $discountLabel = 'Standard Fare';
+
+    if ($age < 7) {
+        $discountPercent = 50;
+        $discountType = 'CHILD_HALF';
+        $discountLabel = 'Child under 7';
+    } elseif ($age >= 80) {
+        $discountPercent = 50;
+        $discountType = 'SUPER_SENIOR';
+        $discountLabel = 'Senior 80+';
+    } elseif ($age >= 60) {
+        $discountPercent = 30;
+        $discountType = 'SENIOR';
+        $discountLabel = 'Senior citizen';
+    }
+
+    if (strtoupper($isMilitary) === 'Y' && $discountPercent < 30) {
+        $discountPercent = 30;
+        $discountType = 'MILITARY';
+        $discountLabel = 'Military concession';
+    }
+
+    return [
+        'discount_percent' => $discountPercent,
+        'discount_type' => $discountType,
+        'discount_label' => $discountLabel,
+    ];
+}
+
+function railwayCalculatePassengerFare(float $baseFare, array $passenger): array
+{
+    $discount = railwayResolvePassengerDiscount((int) ($passenger['age'] ?? 0), (string) ($passenger['is_military'] ?? 'N'));
+    $discountAmount = railwayRoundFare($baseFare * ($discount['discount_percent'] / 100));
+    $finalFare = max(0, railwayRoundFare($baseFare - $discountAmount));
+
+    return array_merge($passenger, $discount, [
+        'base_fare' => railwayRoundFare($baseFare),
+        'discount_amount' => $discountAmount,
+        'final_fare' => $finalFare,
+    ]);
+}
+
+function railwayCalculateManifestPricing(float $baseFare, array $manifest): array
+{
+    $passengers = [];
+    $baseTotal = 0;
+    $discountTotal = 0;
+    $finalTotal = 0;
+
+    foreach ($manifest as $passenger) {
+        $pricedPassenger = railwayCalculatePassengerFare($baseFare, $passenger);
+        $passengers[] = $pricedPassenger;
+        $baseTotal += (float) $pricedPassenger['base_fare'];
+        $discountTotal += (float) $pricedPassenger['discount_amount'];
+        $finalTotal += (float) $pricedPassenger['final_fare'];
+    }
+
+    return [
+        'passengers' => $passengers,
+        'passenger_count' => count($passengers),
+        'base_total' => $baseTotal,
+        'discount_total' => $discountTotal,
+        'final_total' => $finalTotal,
+        'average_final_fare' => count($passengers) > 0 ? round($finalTotal / count($passengers), 2) : 0,
+    ];
+}
+
+function railwayBuildPassengerSummary(array $passengers): string
+{
+    $lines = [];
+
+    foreach ($passengers as $passenger) {
+        $lines[] = sprintf(
+            '%s (Age %d%s) - %s - Rs. %0.2f',
+            $passenger['name'],
+            (int) $passenger['age'],
+            ($passenger['is_military'] ?? 'N') === 'Y' ? ', Military' : '',
+            $passenger['discount_label'] ?? 'Standard Fare',
+            (float) ($passenger['final_fare'] ?? 0)
+        );
+    }
+
+    return implode("\n", $lines);
+}
+
 function railwayGetTrainClassAvailability($conn, $trainId): array
 {
     $train = railwayGetTrainById($conn, $trainId);
@@ -218,8 +350,10 @@ function railwayEnsureBookingHistoryTable($conn): void
                         compartment VARCHAR2(20),
                         seats VARCHAR2(200),
                         seat_count NUMBER,
+                        base_fare NUMBER(10,2),
                         fare_per_seat NUMBER(10,2),
                         total_amount NUMBER(10,2),
+                        passenger_summary VARCHAR2(4000),
                         journey_date VARCHAR2(20),
                         booking_status VARCHAR2(30),
                         booked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -231,6 +365,29 @@ function railwayEnsureBookingHistoryTable($conn): void
 
     $stmt = oci_parse($conn, $plsql);
     @oci_execute($stmt);
+
+    $columnChecks = [
+        'BASE_FARE' => 'ALTER TABLE PASSENGER_BOOKING_HISTORY ADD (base_fare NUMBER(10,2))',
+        'PASSENGER_SUMMARY' => 'ALTER TABLE PASSENGER_BOOKING_HISTORY ADD (passenger_summary VARCHAR2(4000))',
+    ];
+
+    foreach ($columnChecks as $columnName => $ddl) {
+        $columnSql = "
+            SELECT COUNT(*)
+            FROM user_tab_columns
+            WHERE table_name = 'PASSENGER_BOOKING_HISTORY'
+              AND column_name = :column_name
+        ";
+        $columnStmt = oci_parse($conn, $columnSql);
+        oci_bind_by_name($columnStmt, ':column_name', $columnName);
+        @oci_execute($columnStmt);
+        $exists = oci_fetch_row($columnStmt);
+        if ((int) ($exists[0] ?? 0) === 0) {
+            $alterStmt = oci_parse($conn, $ddl);
+            @oci_execute($alterStmt);
+        }
+    }
+
     $initialized = true;
 }
 
@@ -252,8 +409,10 @@ function railwayInsertPassengerBookingHistory($conn, array $booking): void
             compartment,
             seats,
             seat_count,
+            base_fare,
             fare_per_seat,
             total_amount,
+            passenger_summary,
             journey_date,
             booking_status
         ) VALUES (
@@ -269,8 +428,10 @@ function railwayInsertPassengerBookingHistory($conn, array $booking): void
             :compartment,
             :seats,
             :seat_count,
+            :base_fare,
             :fare_per_seat,
             :total_amount,
+            :passenger_summary,
             :journey_date,
             :booking_status
         )
@@ -301,8 +462,10 @@ function railwayGetPassengerBookingHistory($conn, $userId): array
             compartment,
             seats,
             seat_count,
+            base_fare,
             fare_per_seat,
             total_amount,
+            passenger_summary,
             journey_date,
             booking_status,
             booked_at

@@ -556,7 +556,11 @@ if ($source !== '' && $destination !== '') {
                             Class: <?php echo htmlspecialchars($item['COMPARTMENT']); ?><br>
                             Seats: <?php echo htmlspecialchars($item['SEATS']); ?><br>
                             Seats Count: <?php echo htmlspecialchars($item['SEAT_COUNT']); ?><br>
+                            Base Fare: Rs. <?php echo htmlspecialchars(number_format((float) ($item['BASE_FARE'] ?? 0), 2)); ?><br>
                             Fare Per Seat: Rs. <?php echo htmlspecialchars(number_format((float) ($item['FARE_PER_SEAT'] ?? 0), 2)); ?><br>
+                            <?php if (!empty($item['PASSENGER_SUMMARY'])): ?>
+                                Passenger Summary:<br><?php echo nl2br(htmlspecialchars($item['PASSENGER_SUMMARY'])); ?><br>
+                            <?php endif; ?>
                             Booked At: <?php echo htmlspecialchars($item['BOOKED_AT']); ?><br>
                             Status: <?php echo htmlspecialchars($item['BOOKING_STATUS']); ?>
                             <?php if (($item['BOOKING_STATUS'] ?? '') === 'CANCELLED'): ?>
