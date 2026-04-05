@@ -1,3 +1,6 @@
+<?php
+$redirect = $_GET['redirect'] ?? '';
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -195,6 +198,7 @@
         <p class="subtitle">Please enter your credentials to continue.</p>
 
         <form method="post" action="authenticate.php">
+            <input type="hidden" name="redirect" value="<?php echo htmlspecialchars($redirect); ?>">
             <div class="input-box">
                 <i class="fa-solid fa-user"></i>
                 <input type="text" name="username" placeholder="Username" required>

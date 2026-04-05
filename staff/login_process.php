@@ -1,6 +1,7 @@
 <?php
 session_start();
 include '../db.php';
+require_once __DIR__ . '/../TwoPL/train_data.php';
 
 $username = $_POST['username'];
 $password = $_POST['password'];
@@ -75,6 +76,8 @@ if ($row) {
 
     $_SESSION['username'] = $username;
     $_SESSION['role'] = 'clerk';
+    railwayUpsertClerkLoginStatus($conn, $username, true);
+    oci_commit($conn);
 
     header("Location: clerk.php");
     exit;

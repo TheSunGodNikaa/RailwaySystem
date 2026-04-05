@@ -1,6 +1,7 @@
 <?php
 session_start();
 include "db.php";
+require_once __DIR__ . "/TwoPL/train_data.php";
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
@@ -24,8 +25,33 @@ if (!$user) {
     die("User not found.");
 }
 
+railwayEnsureCancellationRequestsTable($conn);
+$helpMessage = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'request_cancellation') {
+    $transactionId = trim($_POST['transaction_id'] ?? '');
+    $reason = trim($_POST['reason'] ?? '');
+
+    if ($transactionId === '' || $reason === '') {
+        $helpMessage = 'Please provide both the transaction ID and a short reason.';
+    } else {
+        railwayInsertCancellationRequest($conn, [
+            'user_id' => $user_id,
+            'passenger_name' => $user['FULL_NAME'],
+            'transaction_id' => $transactionId,
+            'reason' => $reason,
+            'request_status' => 'PENDING',
+        ]);
+        @oci_commit($conn);
+        $helpMessage = 'Cancellation request submitted. The clerk team can review it now.';
+    }
+}
+
+$bookingHistory = railwayGetPassengerBookingHistory($conn, $user_id);
+
 $source = trim($_GET['source'] ?? '');
 $destination = trim($_GET['destination'] ?? '');
+$journeyDate = trim($_GET['journey_date'] ?? '');
+$selectedTrainId = trim($_GET['train_id'] ?? '');
 $searchResults = [];
 $searchError = '';
 
@@ -95,12 +121,15 @@ if ($source !== '' && $destination !== '') {
                     (UPPER(t.destination_station) = UPPER(:destination) OR dst.station_name IS NOT NULL)
             )
             WHERE src_stop_number < dst_stop_number
+                AND (:selected_train_id IS NULL OR TO_CHAR(train_id) = :selected_train_id)
             ORDER BY train_id
         ";
 
         $searchStmt = oci_parse($conn, $searchSql);
         oci_bind_by_name($searchStmt, ":source", $source);
         oci_bind_by_name($searchStmt, ":destination", $destination);
+        $selectedTrainBind = $selectedTrainId !== '' ? $selectedTrainId : null;
+        oci_bind_by_name($searchStmt, ":selected_train_id", $selectedTrainBind);
 
         if (!oci_execute($searchStmt)) {
             $e = oci_error($searchStmt);
@@ -142,8 +171,8 @@ if ($source !== '' && $destination !== '') {
         .nav-links a:hover, .nav-links a.active { background: rgba(255,255,255,0.1); color: white; }
 
         main { flex: 1; margin-left: 280px; padding: 40px; position: relative; }
-        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; position: relative; }
-        .profile-container { position: relative; z-index: 2000; }
+        .top-bar { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 40px; position: relative; }
+        .profile-container { position: relative; z-index: 2000; margin-left: auto; }
 
         .profile-capsule {
             background: white;
@@ -156,6 +185,8 @@ if ($source !== '' && $destination !== '') {
             cursor: pointer;
             transition: 0.3s;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            min-width: 220px;
+            justify-content: flex-start;
         }
 
         .avatar {
@@ -297,7 +328,29 @@ if ($source !== '' && $destination !== '') {
             font-weight: 700;
         }
 
-        .faq-section { background: #0f172a; border-radius: 24px; padding: 40px; color: white; margin-top: 40px; }
+        .selected-train-note {
+            background: #dbeafe;
+            color: #1d4ed8;
+            border-radius: 14px;
+            padding: 14px 18px;
+            margin-bottom: 24px;
+            font-weight: 700;
+        }
+
+        .history-section { background: white; border-radius: 24px; padding: 32px; border: 1px solid #e2e8f0; margin-bottom: 40px; }
+        .history-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .history-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 20px; padding: 24px; }
+        .history-card h4 { margin: 10px 0 8px; font-size: 1.2rem; }
+        .history-meta { color: var(--text-dim); font-size: 0.86rem; font-weight: 600; line-height: 1.7; }
+        .history-chip { display: inline-flex; align-items: center; gap: 8px; background: #dbeafe; color: var(--accent); border-radius: 999px; padding: 8px 12px; font-size: 0.78rem; font-weight: 800; }
+        .history-total { font-size: 1.3rem; font-weight: 800; color: var(--text-main); margin-top: 14px; }
+        .help-section { background: #0f172a; border-radius: 24px; padding: 40px; color: white; margin-top: 40px; }
+        .help-form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 24px 0 30px; }
+        .help-form textarea, .help-form input { width: 100%; border: none; border-radius: 14px; padding: 14px 16px; font-size: 0.95rem; color: var(--text-main); }
+        .help-form textarea { min-height: 120px; resize: vertical; }
+        .help-full { grid-column: span 2; }
+        .help-banner { background: rgba(255,255,255,0.12); color: #bfdbfe; padding: 14px 18px; border-radius: 14px; margin-bottom: 18px; font-weight: 700; }
+        .faq-section { background: transparent; border-radius: 0; padding: 0; color: white; margin-top: 0; }
         .faq-item { border-bottom: 1px solid rgba(255,255,255,0.1); padding: 22px 0; cursor: pointer; }
         .faq-item:last-child { border: none; }
         .faq-question { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 1rem; }
@@ -307,10 +360,20 @@ if ($source !== '' && $destination !== '') {
         .faq-item.active .plus-icon { transform: rotate(45deg); color: var(--accent); }
 
         @media (max-width: 900px) {
+            .top-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .profile-container {
+                margin-left: 0;
+            }
             .search-form,
-            .results-grid {
+            .results-grid,
+            .history-grid,
+            .help-form {
                 grid-template-columns: 1fr;
             }
+            .help-full { grid-column: span 1; }
         }
     </style>
 </head>
@@ -321,8 +384,8 @@ if ($source !== '' && $destination !== '') {
     <ul class="nav-links">
         <li><a href="#" class="active"><i class="fa-solid fa-house"></i> Dashboard</a></li>
         <li><a href="TwoPL/index.php"><i class="fa-solid fa-ticket"></i> Book Ticket</a></li>
-        <li><a href="#"><i class="fa-solid fa-clock-rotate-left"></i> History</a></li>
-        <li><a href="#"><i class="fa-solid fa-circle-question"></i> Help Center</a></li>
+        <li><a href="#history"><i class="fa-solid fa-clock-rotate-left"></i> History</a></li>
+        <li><a href="#help-center"><i class="fa-solid fa-circle-question"></i> Help Center</a></li>
     </ul>
     <a href="login.php" style="margin-top:auto; color: #fda4af; text-decoration: none; font-weight: 700; padding: 15px; display: flex; align-items: center; gap: 10px;">
         <i class="fa-solid fa-power-off"></i> Logout
@@ -331,7 +394,7 @@ if ($source !== '' && $destination !== '') {
 
 <main>
     <div class="top-bar">
-        <h2 style="font-weight: 800; letter-spacing: -1px; color: var(--text-main);">Dashboard</h2>
+        <h2 style="font-weight: 800; letter-spacing: -1px; color: var(--text-main);">Passenger Dashboard</h2>
 
         <div class="profile-container" id="profileCont">
             <div class="profile-capsule" onclick="event.stopPropagation(); document.getElementById('profileCont').classList.add('active')">
@@ -383,6 +446,10 @@ if ($source !== '' && $destination !== '') {
                 <label for="destination">Destination Station</label>
                 <input list="station-list" id="destination" name="destination" value="<?php echo htmlspecialchars($destination); ?>" placeholder="Enter destination station" required>
             </div>
+            <input type="hidden" name="journey_date" value="<?php echo htmlspecialchars($journeyDate); ?>">
+            <?php if ($selectedTrainId !== ''): ?>
+                <input type="hidden" name="train_id" value="<?php echo htmlspecialchars($selectedTrainId); ?>">
+            <?php endif; ?>
             <button type="submit" class="search-btn">Search Trains</button>
         </form>
 
@@ -406,6 +473,14 @@ if ($source !== '' && $destination !== '') {
             No trains were found for <?php echo htmlspecialchars($source); ?> to <?php echo htmlspecialchars($destination); ?>.
         </div>
     <?php else: ?>
+        <?php if ($selectedTrainId !== ''): ?>
+            <div class="selected-train-note">
+                Showing the train you selected from home. Train ID: <?php echo htmlspecialchars($selectedTrainId); ?>
+                <?php if ($journeyDate !== ''): ?>
+                    | Journey date: <?php echo htmlspecialchars($journeyDate); ?>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
         <div class="results-grid">
             <?php foreach ($searchResults as $train): ?>
                 <div class="train-card">
@@ -445,14 +520,84 @@ if ($source !== '' && $destination !== '') {
                         <div style="font-weight:800; font-size:1.4rem; color: var(--text-main);">
                             Rs. <?php echo htmlspecialchars(number_format((float) ($train['PRICE'] ?? 0), 2)); ?>
                         </div>
-                        <a href="TwoPL/index.php?train_id=<?php echo urlencode($train['TRAIN_ID']); ?>" class="book-btn">Book Now</a>
+                        <a href="TwoPL/index.php?train_id=<?php echo urlencode($train['TRAIN_ID']); ?>&source=<?php echo urlencode($source); ?>&destination=<?php echo urlencode($destination); ?>&journey_date=<?php echo urlencode($journeyDate); ?>" class="book-btn">Book Now</a>
                     </div>
                 </div>
             <?php endforeach; ?>
         </div>
     <?php endif; ?>
 
-    <div class="faq-section">
+    <section class="history-section" id="history">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:20px; margin-bottom:24px;">
+            <div>
+                <h3 style="margin:0; font-size:1.5rem;">Booking History</h3>
+                <p class="subtext" style="margin-top:6px;">Every confirmed train you book through the 2PL flow appears here with route, seats, fare, and transaction details.</p>
+            </div>
+            <a href="TwoPL/index.php" class="book-btn" style="white-space:nowrap;">Book Another Trip</a>
+        </div>
+
+        <?php if (empty($bookingHistory)): ?>
+            <div class="empty-state" style="margin-bottom:0;">
+                No bookings yet. Search a train and complete one booking to start building your passenger history.
+            </div>
+        <?php else: ?>
+            <div class="history-grid">
+                <?php foreach ($bookingHistory as $item): ?>
+                    <div class="history-card">
+                        <span class="history-chip">
+                            <i class="fa-solid fa-receipt"></i>
+                            <?php echo htmlspecialchars($item['TRANSACTION_ID'] ?: 'CONFIRMED'); ?>
+                        </span>
+                        <h4><?php echo htmlspecialchars(($item['TRAIN_NUMBER'] ?: $item['TRAIN_ID']) . ' - ' . $item['TRAIN_NAME']); ?></h4>
+                        <div class="history-meta">
+                            Route: <?php echo htmlspecialchars($item['SOURCE_STATION']); ?> to <?php echo htmlspecialchars($item['DESTINATION_STATION']); ?><br>
+                            Journey Date: <?php echo htmlspecialchars($item['JOURNEY_DATE']); ?><br>
+                            Boarding / Arrival: <?php echo htmlspecialchars($item['BOARD_TIME'] ?: '--'); ?> / <?php echo htmlspecialchars($item['DROP_TIME'] ?: '--'); ?><br>
+                            Class: <?php echo htmlspecialchars($item['COMPARTMENT']); ?><br>
+                            Seats: <?php echo htmlspecialchars($item['SEATS']); ?><br>
+                            Seats Count: <?php echo htmlspecialchars($item['SEAT_COUNT']); ?><br>
+                            Fare Per Seat: Rs. <?php echo htmlspecialchars(number_format((float) ($item['FARE_PER_SEAT'] ?? 0), 2)); ?><br>
+                            Booked At: <?php echo htmlspecialchars($item['BOOKED_AT']); ?><br>
+                            Status: <?php echo htmlspecialchars($item['BOOKING_STATUS']); ?>
+                            <?php if (($item['BOOKING_STATUS'] ?? '') === 'CANCELLED'): ?>
+                                <br><strong style="color:#dc2626;">Booking cancelled by clerk action.</strong>
+                            <?php endif; ?>
+                        </div>
+                        <div class="history-total">Total: Rs. <?php echo htmlspecialchars(number_format((float) ($item['TOTAL_AMOUNT'] ?? 0), 2)); ?></div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </section>
+
+    <section class="help-section" id="help-center">
+        <h3 style="margin-bottom: 10px; font-weight: 800; font-size: 1.5rem;">Help Center</h3>
+        <p style="color:#cbd5e1; line-height:1.7;">Need a cancellation? Send the clerk team a request with your transaction ID and a short reason. They can review it directly from the staff dashboard.</p>
+
+        <?php if ($helpMessage !== ''): ?>
+            <div class="help-banner"><?php echo htmlspecialchars($helpMessage); ?></div>
+        <?php endif; ?>
+
+        <form method="POST" class="help-form">
+            <input type="hidden" name="action" value="request_cancellation">
+            <div>
+                <label style="display:block; margin-bottom:8px; font-size:0.78rem; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; color:#cbd5e1;">Transaction ID</label>
+                <input type="text" name="transaction_id" placeholder="Enter your booking transaction ID" required>
+            </div>
+            <div>
+                <label style="display:block; margin-bottom:8px; font-size:0.78rem; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; color:#cbd5e1;">Passenger</label>
+                <input type="text" value="<?php echo htmlspecialchars($user['FULL_NAME']); ?>" disabled>
+            </div>
+            <div class="help-full">
+                <label style="display:block; margin-bottom:8px; font-size:0.78rem; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; color:#cbd5e1;">Short Reason</label>
+                <textarea name="reason" placeholder="Example: Journey postponed due to personal reason." required></textarea>
+            </div>
+            <div class="help-full">
+                <button type="submit" class="book-btn">Request Booking Cancellation</button>
+            </div>
+        </form>
+
+        <div class="faq-section">
         <h3 style="margin-bottom: 25px; font-weight: 800; font-size: 1.4rem;">System Architecture</h3>
         <div class="faq-item" onclick="this.classList.toggle('active')">
             <div class="faq-question">
@@ -472,7 +617,8 @@ if ($source !== '' && $destination !== '') {
                 Absolutely. Our system uses enterprise-grade encryption and session-based authentication to ensure that your personal and financial details remain private.
             </div>
         </div>
-    </div>
+        </div>
+    </section>
 </main>
 
 <script>

@@ -75,7 +75,7 @@
             position: relative; overflow: hidden;
         }
 
-        .quick-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .quick-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
 
         /* --- Performance Metrics Grid --- */
         .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 30px; }
@@ -83,6 +83,11 @@
 
         /* --- Charts & Terminal --- */
         .chart-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 25px; margin-bottom: 25px; }
+        .clerk-list { margin-top: 12px; display: grid; gap: 10px; }
+        .clerk-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.04); }
+        .clerk-status { padding: 6px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 800; }
+        .status-on { background: #dcfce7; color: #166534; }
+        .status-off { background: #fee2e2; color: #991b1b; }
         
         .terminal {
             background: #000; border-radius: 16px; height: 280px;
@@ -135,6 +140,9 @@
             <div class="nav-item" onclick="switchView('performance', this)">
                 <i class="fa-solid fa-gauge-high"></i> Performance
             </div>
+            <div class="nav-item" onclick="switchView('staffs', this)">
+                <i class="fa-solid fa-users-gear"></i> Staffs
+            </div>
         </nav>
 
         <div style="margin-top: auto;">
@@ -181,6 +189,13 @@
                         <span style="font-weight: 600;">ROOT_ADMIN</span>
                     </div>
                 </div>
+                <div class="card">
+                    <p style="color: #94a3b8; font-size: 0.8rem; text-transform: uppercase;">Active Clerks</p>
+                    <h2 id="activeClerkCount" style="font-size: 2.2rem; margin: 10px 0;">0</h2>
+                    <div id="activeClerkList" class="clerk-list">
+                        <div class="log-entry">Waiting for clerk status...</div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -222,6 +237,20 @@
                 <div class="terminal" id="activityFeed">
                     <div class="log-entry">Waiting for system initialization...</div>
                 </div>
+            </div>
+        </div>
+
+        <div id="staffs" class="view">
+            <div class="card" style="padding: 0; overflow: hidden;">
+                <div style="padding: 24px 24px 10px;">
+                    <h3 style="margin: 0 0 8px;">Staffs</h3>
+                    <p style="color:#94a3b8;">Clerk account details and live login status from the PHP staff module.</p>
+                </div>
+                <iframe
+                    src="http://localhost/railway_auth/staff/admin.php?embed=1"
+                    title="Staff Overview"
+                    style="width: 100%; height: 720px; border: 0; background: #0b0f1a;"
+                ></iframe>
             </div>
         </div>
     </main>
@@ -267,6 +296,7 @@
     <script>
         const socket = io();
         let queueChart, waitingTimeChart;
+        const clerkStatusUrl = "http://localhost/railway_auth/staff/admin.php?embed=1&json=1";
 
         // --- Navigation Logic ---
         function switchView(viewId, el) {
@@ -288,12 +318,35 @@
         function confirmLogout(e) {
             e.preventDefault();
             if(confirm("Warning: You will be logged out. Continue?")) {
-                window.location.href = "http://localhost/railway_auth/staff/login.php";
+                window.location.href = "http://localhost/railway_auth/staff/logout.php";
             }
         }
 
         function closeModal() { document.getElementById('addRequestsModal').style.display = 'none'; }
         function showAddRequestsModal() { document.getElementById('addRequestsModal').style.display = 'flex'; }
+        async function refreshClerkStatus() {
+            try {
+                const response = await fetch(clerkStatusUrl, { cache: 'no-store' });
+                const data = await response.json();
+                document.getElementById('activeClerkCount').textContent = data.logged_in_clerks ?? 0;
+                const clerks = (data.clerks || []).slice(0, 4);
+                document.getElementById('activeClerkList').innerHTML = clerks.length
+                    ? clerks.map(clerk => `
+                        <div class="clerk-row">
+                            <div>
+                                <div style="font-weight:700">${clerk.FULL_NAME}</div>
+                                <div style="color:#94a3b8; font-size:0.78rem;">${clerk.USERNAME} • ${clerk.STATION_CODE}</div>
+                            </div>
+                            <span class="clerk-status ${Number(clerk.IS_LOGGED_IN || 0) === 1 ? 'status-on' : 'status-off'}">
+                                ${Number(clerk.IS_LOGGED_IN || 0) === 1 ? 'Online' : 'Offline'}
+                            </span>
+                        </div>
+                    `).join('')
+                    : '<div class="log-entry">No clerk accounts found.</div>';
+            } catch (error) {
+                document.getElementById('activeClerkList').innerHTML = '<div class="log-entry">Unable to load clerk status.</div>';
+            }
+        }
 
         // --- Chart Initialization ---
         function initCharts() {
@@ -395,7 +448,11 @@
             closeModal();
         }
 
-        window.onload = initCharts;
+        window.onload = function() {
+            initCharts();
+            refreshClerkStatus();
+            setInterval(refreshClerkStatus, 8000);
+        };
     </script>
 </body>
 </html>
