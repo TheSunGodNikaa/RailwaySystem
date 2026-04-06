@@ -421,12 +421,31 @@
             addActivity('SUCCESS', `Request #${data.request_id} cleared from Queue`, data.priority);
         });
 
+        socket.on('external_requests_added', (data) => {
+            addActivity('LIVE', `${data.total} real system request(s) synced from PHP modules.`);
+        });
+
         socket.on('system_initialized', () => {
             document.getElementById('heroStatus').textContent = 'ONLINE';
-            document.getElementById('startBtn').disabled = false;
             document.getElementById('addBtn').disabled = false;
             document.getElementById('initBtn').disabled = true;
             addActivity('SYSTEM', 'Stochastic engine initialized. All OCI listeners active.');
+        });
+
+        socket.on('processing_started', () => {
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('startBtn').disabled = true;
+            addActivity('SYSTEM', 'Background queue processing is live.');
+        });
+
+        socket.on('processing_stopped', () => {
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('startBtn').disabled = false;
+            addActivity('SYSTEM', 'Background queue processing paused.');
+        });
+
+        socket.on('connection_response', () => {
+            addActivity('SYSTEM', 'Dashboard connected. Waiting for live queue intake.');
         });
 
         // --- Control Emitters ---

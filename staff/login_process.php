@@ -77,6 +77,10 @@ if ($row) {
     $_SESSION['username'] = $username;
     $_SESSION['role'] = 'clerk';
     railwayUpsertClerkLoginStatus($conn, $username, true);
+    railwayAppendMiqsmEvent('clerk_login', [
+        'username' => $username,
+        'source' => 'staff_portal',
+    ]);
     oci_commit($conn);
 
     header("Location: clerk.php");

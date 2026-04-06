@@ -99,6 +99,13 @@ $historyPayload = [
 railwayInsertPassengerBookingHistory($conn, $historyPayload);
 
 oci_commit($conn);
+railwayAppendMiqsmEvent('booking_confirmed', [
+    'user_id' => $_SESSION['user_id'],
+    'transaction_id' => $tid,
+    'train_id' => $train['TRAIN_ID'],
+    'compartment' => $compartment,
+    'seat_count' => count($seat_list),
+]);
 releaseLocks($conn, $tid);
 unset($_SESSION['pending_booking']);
 $_SESSION['active_booking']['passengers'] = $pricing['passengers'];

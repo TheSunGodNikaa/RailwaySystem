@@ -25,6 +25,28 @@ if (!$user) {
     die("User not found.");
 }
 
+if (isset($_GET['booking_status_json']) && $_GET['booking_status_json'] === '1') {
+    railwayEnsureBookingHistoryTable($conn);
+    $historyRows = railwayGetPassengerBookingHistory($conn, $user_id);
+    $statuses = [];
+    foreach ($historyRows as $row) {
+        $transactionId = (string) ($row['TRANSACTION_ID'] ?? '');
+        if ($transactionId === '') {
+            continue;
+        }
+        $statuses[$transactionId] = [
+            'transaction_id' => $transactionId,
+            'booking_status' => (string) ($row['BOOKING_STATUS'] ?? ''),
+        ];
+    }
+
+    header('Content-Type: application/json');
+    echo json_encode([
+        'bookings' => array_values($statuses),
+    ]);
+    exit;
+}
+
 railwayEnsureCancellationRequestsTable($conn);
 $helpMessage = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'request_cancellation') {
@@ -40,6 +62,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reque
             'transaction_id' => $transactionId,
             'reason' => $reason,
             'request_status' => 'PENDING',
+        ]);
+        railwayAppendMiqsmEvent('cancellation_requested', [
+            'user_id' => $user_id,
+            'transaction_id' => $transactionId,
+            'reason' => $reason,
         ]);
         @oci_commit($conn);
         $helpMessage = 'Cancellation request submitted. The clerk team can review it now.';
@@ -543,7 +570,7 @@ if ($source !== '' && $destination !== '') {
         <?php else: ?>
             <div class="history-grid">
                 <?php foreach ($bookingHistory as $item): ?>
-                    <div class="history-card">
+                    <div class="history-card" data-transaction-id="<?php echo htmlspecialchars((string) ($item['TRANSACTION_ID'] ?? '')); ?>">
                         <span class="history-chip">
                             <i class="fa-solid fa-receipt"></i>
                             <?php echo htmlspecialchars($item['TRANSACTION_ID'] ?: 'CONFIRMED'); ?>
@@ -562,9 +589,11 @@ if ($source !== '' && $destination !== '') {
                                 Passenger Summary:<br><?php echo nl2br(htmlspecialchars($item['PASSENGER_SUMMARY'])); ?><br>
                             <?php endif; ?>
                             Booked At: <?php echo htmlspecialchars($item['BOOKED_AT']); ?><br>
-                            Status: <?php echo htmlspecialchars($item['BOOKING_STATUS']); ?>
+                            Status: <span class="booking-status-text"><?php echo htmlspecialchars($item['BOOKING_STATUS']); ?></span>
                             <?php if (($item['BOOKING_STATUS'] ?? '') === 'CANCELLED'): ?>
-                                <br><strong style="color:#dc2626;">Booking cancelled by clerk action.</strong>
+                                <br><strong class="booking-cancelled-note" style="color:#dc2626;">Booking cancelled by clerk action.</strong>
+                            <?php else: ?>
+                                <br><strong class="booking-cancelled-note" style="color:#dc2626; display:none;">Booking cancelled by clerk action.</strong>
                             <?php endif; ?>
                         </div>
                         <div class="history-total">Total: Rs. <?php echo htmlspecialchars(number_format((float) ($item['TOTAL_AMOUNT'] ?? 0), 2)); ?></div>
@@ -632,6 +661,34 @@ document.addEventListener('click', function() {
         container.classList.remove('active');
     }
 });
+
+async function refreshBookingStatuses() {
+    try {
+        const response = await fetch('passenger.php?booking_status_json=1', { cache: 'no-store' });
+        const data = await response.json();
+        const bookings = data.bookings || [];
+
+        bookings.forEach((booking) => {
+            const card = document.querySelector(`[data-transaction-id="${booking.transaction_id}"]`);
+            if (!card) {
+                return;
+            }
+
+            const statusNode = card.querySelector('.booking-status-text');
+            const cancelledNote = card.querySelector('.booking-cancelled-note');
+            if (statusNode) {
+                statusNode.textContent = booking.booking_status || '--';
+            }
+            if (cancelledNote) {
+                cancelledNote.style.display = booking.booking_status === 'CANCELLED' ? 'inline' : 'none';
+            }
+        });
+    } catch (error) {
+        console.error('Unable to refresh booking statuses', error);
+    }
+}
+
+setInterval(refreshBookingStatuses, 4000);
 </script>
 
 </body>

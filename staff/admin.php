@@ -9,15 +9,12 @@ include "../db.php";
 require_once __DIR__ . "/../TwoPL/train_data.php";
 
 $clerkStatuses = railwayGetClerkStatuses($conn);
-$statsQuery = "
-    SELECT
-        (SELECT COUNT(*) FROM CLERK) AS total_clerks,
-        (SELECT COUNT(*) FROM CLERK_LOGIN_STATUS WHERE is_logged_in = 1) AS logged_in_clerks
-    FROM DUAL
-";
-$statsStmt = oci_parse($conn, $statsQuery);
-oci_execute($statsStmt);
-$stats = oci_fetch_assoc($statsStmt);
+$stats = [
+    'TOTAL_CLERKS' => count($clerkStatuses),
+    'LOGGED_IN_CLERKS' => count(array_filter($clerkStatuses, static function ($clerk) {
+        return (int) ($clerk['IS_LOGGED_IN'] ?? 0) === 1;
+    })),
+];
 
 if (isset($_GET['json']) && $_GET['json'] === '1') {
     header('Content-Type: application/json');

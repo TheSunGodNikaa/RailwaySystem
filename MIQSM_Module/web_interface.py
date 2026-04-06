@@ -1,6 +1,8 @@
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
 import time
+import json
+import os
 from main import MIQSMModule
 import random
 from config.constants import MAX_WAITING_TIME
@@ -15,6 +17,10 @@ processing_active = False
 processing_thread = None
 last_rate_timestamp = None
 last_processed_total = 0
+external_event_offset = 0
+last_external_ingest_timestamp = None
+
+EVENT_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'runtime', 'app_events.jsonl')
 
 def generate_sample_requests(count=50):
     """Generate sample requests"""
@@ -51,6 +57,88 @@ def generate_sample_requests(count=50):
         requests.append(request)
     
     return requests
+
+def initialize_external_event_cursor(skip_existing=False):
+    """Position the external-event cursor."""
+    global external_event_offset
+
+    directory = os.path.dirname(EVENT_FILE_PATH)
+    os.makedirs(directory, exist_ok=True)
+
+    if not os.path.exists(EVENT_FILE_PATH):
+        with open(EVENT_FILE_PATH, 'a', encoding='utf-8'):
+            pass
+
+    external_event_offset = os.path.getsize(EVENT_FILE_PATH) if skip_existing else 0
+
+def build_requests_from_event(event_record):
+    """Translate PHP-side system events into MIQSM-compatible requests."""
+    event_name = event_record.get('event_name')
+    payload = event_record.get('payload') or {}
+    user_ref = str(payload.get('user_id') or payload.get('username') or payload.get('transaction_id') or 'SYSTEM')
+
+    if event_name == 'booking_confirmed':
+        return [{
+            'type': 'booking',
+            'user_id': user_ref,
+            'train_id': str(payload.get('train_id') or 'LIVE'),
+            'seat_count': max(int(payload.get('seat_count') or 1), 1),
+            'priority': 3
+        }]
+
+    if event_name in {'cancellation_requested', 'booking_cancelled'}:
+        return [{
+            'type': 'cancellation',
+            'user_id': user_ref,
+            'booking_id': str(payload.get('transaction_id') or payload.get('booking_id') or 'LIVE'),
+            'priority': 1
+        }]
+
+    if event_name in {'passenger_login', 'clerk_login', 'clerk_logout'}:
+        return [{
+            'type': 'payment',
+            'user_id': user_ref,
+            'amount': 0,
+            'booking_id': str(payload.get('transaction_id') or event_name.upper()),
+            'priority': 2
+        }]
+
+    return []
+
+def drain_external_events():
+    """Read new PHP-side events and enqueue them into MIQSM."""
+    global external_event_offset, miqsm_module, last_external_ingest_timestamp
+
+    if miqsm_module is None or not os.path.exists(EVENT_FILE_PATH):
+        return 0
+
+    collected_requests = []
+
+    with open(EVENT_FILE_PATH, 'r', encoding='utf-8') as event_file:
+        event_file.seek(external_event_offset)
+        for line in event_file:
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                event_record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            collected_requests.extend(build_requests_from_event(event_record))
+
+        external_event_offset = event_file.tell()
+
+    if collected_requests:
+        miqsm_module.collect_and_enqueue_requests(collected_requests)
+        last_external_ingest_timestamp = time.time()
+        socketio.emit('external_requests_added', {
+            'total': len(collected_requests)
+        })
+        emit_status_update()
+
+    return len(collected_requests)
 
 def emit_status_update():
     """Emit current system status to all connected clients"""
@@ -120,10 +208,18 @@ def background_processing():
     
     while processing_active:
         if miqsm_module:
+            drain_external_events()
+
             # Process requests
             total_requests = sum(q.size() for q in miqsm_module.task_1_2.queues)
             
             if total_requests > 0:
+                # Hold freshly ingested external requests briefly so they are visible in the queue graph.
+                if last_external_ingest_timestamp and (time.time() - last_external_ingest_timestamp) < 1.5:
+                    emit_status_update()
+                    socketio.sleep(0.2)
+                    continue
+
                 # Process one request
                 request = miqsm_module.task_1_3.process_single_request()
                 
@@ -139,7 +235,7 @@ def background_processing():
                 # Emit status update
                 emit_status_update()
                 
-                socketio.sleep(0.1)
+                socketio.sleep(0.6)
             else:
                 # Still emit periodic updates so charts remain in sync.
                 emit_status_update()
@@ -167,6 +263,10 @@ def index():
 def handle_connect():
     """Handle client connection"""
     emit('connection_response', {'status': 'connected'})
+    if miqsm_module is None:
+        handle_initialize()
+    else:
+        emit_status_update()
 
 @socketio.on('initialize_system')
 def handle_initialize():
@@ -176,10 +276,14 @@ def handle_initialize():
     processing_active = False
     miqsm_module = MIQSMModule()
     miqsm_module.initialize()
+    initialize_external_event_cursor(skip_existing=False)
     last_rate_timestamp = None
     last_processed_total = 0
+    drain_external_events()
     
     emit('system_initialized', {'message': 'System initialized with 5 queues'})
+    if ensure_processing_started():
+        emit('processing_started', {'message': 'Processing started automatically'})
     emit_status_update()
 
 @socketio.on('start_processing')

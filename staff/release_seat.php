@@ -103,6 +103,14 @@ foreach ($relatedTransactions as $transactionId) {
 }
 
 if (oci_commit($conn)) {
+    foreach ($relatedTransactions as $transactionId) {
+        railwayAppendMiqsmEvent('booking_cancelled', [
+            'transaction_id' => $transactionId,
+            'train_id' => $train_id,
+            'compartment' => $compartment,
+            'seat_items' => $items,
+        ]);
+    }
     header("Location: seat_view.php?train_id=" . urlencode($train_id) . "&compartment=" . urlencode($compartment) . "&msg=released");
     exit;
 }

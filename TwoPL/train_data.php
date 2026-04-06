@@ -594,6 +594,29 @@ function railwayResolveCancellationRequest($conn, string $transactionId): void
     @oci_execute($stmt, OCI_NO_AUTO_COMMIT);
 }
 
+function railwayGetMiqsmEventLogPath(): string
+{
+    return dirname(__DIR__) . DIRECTORY_SEPARATOR . 'MIQSM_Module' . DIRECTORY_SEPARATOR . 'runtime' . DIRECTORY_SEPARATOR . 'app_events.jsonl';
+}
+
+function railwayAppendMiqsmEvent(string $eventName, array $payload = []): void
+{
+    $path = railwayGetMiqsmEventLogPath();
+    $directory = dirname($path);
+
+    if (!is_dir($directory)) {
+        @mkdir($directory, 0777, true);
+    }
+
+    $record = [
+        'event_name' => $eventName,
+        'timestamp' => date('c'),
+        'payload' => $payload,
+    ];
+
+    @file_put_contents($path, json_encode($record, JSON_UNESCAPED_SLASHES) . PHP_EOL, FILE_APPEND | LOCK_EX);
+}
+
 function railwayEnsureClerkStatusTable($conn): void
 {
     static $initialized = false;
@@ -617,7 +640,8 @@ function railwayEnsureClerkStatusTable($conn): void
                         username VARCHAR2(100) PRIMARY KEY,
                         is_logged_in NUMBER(1) DEFAULT 0,
                         last_login_at TIMESTAMP,
-                        last_logout_at TIMESTAMP
+                        last_logout_at TIMESTAMP,
+                        last_seen_at TIMESTAMP
                     )
                 ';
             END IF;
@@ -626,6 +650,21 @@ function railwayEnsureClerkStatusTable($conn): void
 
     $stmt = oci_parse($conn, $plsql);
     @oci_execute($stmt);
+
+    $columnSql = "
+        SELECT COUNT(*)
+        FROM user_tab_columns
+        WHERE table_name = 'CLERK_LOGIN_STATUS'
+          AND column_name = 'LAST_SEEN_AT'
+    ";
+    $columnStmt = oci_parse($conn, $columnSql);
+    @oci_execute($columnStmt);
+    $exists = oci_fetch_row($columnStmt);
+    if ((int) ($exists[0] ?? 0) === 0) {
+        $alterStmt = oci_parse($conn, "ALTER TABLE CLERK_LOGIN_STATUS ADD (last_seen_at TIMESTAMP)");
+        @oci_execute($alterStmt);
+    }
+
     $initialized = true;
 }
 
@@ -642,20 +681,38 @@ function railwayUpsertClerkLoginStatus($conn, string $username, bool $isLoggedIn
             UPDATE SET
                 is_logged_in = :logged_value,
                 last_login_at = CASE WHEN :logged_value = 1 THEN CURRENT_TIMESTAMP ELSE target.last_login_at END,
-                last_logout_at = CASE WHEN :logged_value = 0 THEN CURRENT_TIMESTAMP ELSE target.last_logout_at END
+                last_logout_at = CASE WHEN :logged_value = 0 THEN CURRENT_TIMESTAMP ELSE target.last_logout_at END,
+                last_seen_at = CASE WHEN :logged_value = 1 THEN CURRENT_TIMESTAMP ELSE target.last_seen_at END
         WHEN NOT MATCHED THEN
-            INSERT (username, is_logged_in, last_login_at, last_logout_at)
+            INSERT (username, is_logged_in, last_login_at, last_logout_at, last_seen_at)
             VALUES (
                 :username,
                 :logged_value,
                 CASE WHEN :logged_value = 1 THEN CURRENT_TIMESTAMP ELSE NULL END,
-                CASE WHEN :logged_value = 0 THEN CURRENT_TIMESTAMP ELSE NULL END
+                CASE WHEN :logged_value = 0 THEN CURRENT_TIMESTAMP ELSE NULL END,
+                CASE WHEN :logged_value = 1 THEN CURRENT_TIMESTAMP ELSE NULL END
             )
     ";
 
     $stmt = oci_parse($conn, $sql);
     oci_bind_by_name($stmt, ":username", $username);
     oci_bind_by_name($stmt, ":logged_value", $loggedValue);
+    @oci_execute($stmt, OCI_NO_AUTO_COMMIT);
+}
+
+function railwayTouchClerkLoginStatus($conn, string $username): void
+{
+    railwayEnsureClerkStatusTable($conn);
+
+    $sql = "
+        UPDATE CLERK_LOGIN_STATUS
+        SET is_logged_in = 1,
+            last_seen_at = CURRENT_TIMESTAMP
+        WHERE username = :username
+    ";
+
+    $stmt = oci_parse($conn, $sql);
+    oci_bind_by_name($stmt, ":username", $username);
     @oci_execute($stmt, OCI_NO_AUTO_COMMIT);
 }
 
@@ -674,9 +731,15 @@ function railwayGetClerkStatuses($conn): array
             c.DEPARTMENT,
             c.STATION_CODE,
             c.CREATED_AT,
-            NVL(s.is_logged_in, 0) AS is_logged_in,
+            CASE
+                WHEN NVL(s.is_logged_in, 0) = 1
+                     AND s.last_seen_at >= CURRENT_TIMESTAMP - NUMTODSINTERVAL(120, 'SECOND')
+                    THEN 1
+                ELSE 0
+            END AS is_logged_in,
             s.last_login_at,
-            s.last_logout_at
+            s.last_logout_at,
+            s.last_seen_at
         FROM CLERK c
         LEFT JOIN CLERK_LOGIN_STATUS s
             ON s.username = c.username

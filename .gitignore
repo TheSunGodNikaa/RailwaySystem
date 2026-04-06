@@ -4,6 +4,7 @@
 
 # Logs
 **/logs/
+**/runtime/
 
 # Virtual environments
 **/.venv/

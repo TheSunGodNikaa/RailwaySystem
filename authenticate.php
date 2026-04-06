@@ -22,6 +22,12 @@ $_SESSION['username'] = $row['USERNAME'];
 $_SESSION['full_name'] = $row['FULL_NAME'];
 $_SESSION['role'] = 'passenger';
 
+require_once __DIR__ . "/TwoPL/train_data.php";
+railwayAppendMiqsmEvent('passenger_login', [
+    'user_id' => $row['USER_ID'],
+    'username' => $row['USERNAME'],
+]);
+
 $target = 'passenger.php';
 if ($redirect !== '' && preg_match('/^[A-Za-z0-9_\/\.\-\?\=\&\%]+$/', $redirect)) {
     $target = $redirect;
