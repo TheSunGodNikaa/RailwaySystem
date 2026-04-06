@@ -8,6 +8,7 @@ $redirect = $_GET['redirect'] ?? '';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login | Railway Reservation System</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="assets/support_bot.css">
     <style>
         :root {
             --primary: #1e3a8a; /* Deep Navy */
@@ -218,5 +219,17 @@ $redirect = $_GET['redirect'] ?? '';
     </div>
 </div>
 
+<script src="assets/support_bot.js"></script>
+<script>
+window.mountSupportBot({
+    pageName: 'the login page',
+    bookingUrl: 'login.php?redirect=TwoPL/index.php',
+    loginUrl: 'login.php',
+    registerUrl: 'register.php',
+    historyTarget: 'login.php?redirect=passenger.php',
+    helpTarget: 'login.php?redirect=passenger.php%23help-center',
+    searchTarget: '#top'
+});
+</script>
 </body>
 </html>

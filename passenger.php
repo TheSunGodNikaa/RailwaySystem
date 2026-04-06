@@ -385,6 +385,17 @@ if ($source !== '' && $destination !== '') {
         .faq-item.active .faq-answer { max-height: 200px; margin-top: 15px; }
         .plus-icon { transition: transform 0.3s; font-size: 1rem; }
         .faq-item.active .plus-icon { transform: rotate(45deg); color: var(--accent); }
+        .bot-fab{position:fixed;right:24px;bottom:24px;width:62px;height:62px;border-radius:999px;border:none;background:#0f172a;color:#fff;box-shadow:0 20px 35px rgba(15,23,42,.2);cursor:pointer;z-index:2200}
+        .bot-panel{position:fixed;right:24px;bottom:96px;width:360px;background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 25px 45px rgba(15,23,42,.18);padding:20px;z-index:2200;display:none}
+        .bot-panel.open{display:block}.bot-title{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}.bot-chip{display:inline-flex;padding:6px 10px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:.72rem;font-weight:800}
+        .bot-thread{display:grid;gap:12px;max-height:300px;overflow-y:auto;padding-right:4px;margin:14px 0}
+        .bot-bubble{padding:12px 14px;border-radius:18px;font-size:.92rem;line-height:1.7}
+        .bot-bubble.bot{background:#f8fafc;color:var(--text-main);border:1px solid #e2e8f0;border-top-left-radius:8px}
+        .bot-bubble.user{background:#0f172a;color:#fff;margin-left:46px;border-top-right-radius:8px}
+        .bot-actions{display:grid;gap:10px;margin-top:12px}.bot-actions button{border:none;border-radius:14px;padding:12px 14px;text-align:left;background:#f8fafc;color:var(--text-main);font-weight:700;cursor:pointer}.bot-actions button:hover{background:#eff6ff}
+        .bot-input-wrap{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:14px}.bot-input{border:1px solid #dbe2ea;border-radius:14px;padding:12px 14px;font-size:.92rem;color:var(--text-main)}.bot-send{border:none;border-radius:14px;padding:12px 16px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}
+        .bot-status{color:var(--text-dim);font-size:.78rem;min-height:18px;margin-top:8px}.bot-typing{display:inline-flex;gap:5px;align-items:center}.bot-typing span{width:7px;height:7px;border-radius:999px;background:#94a3b8;animation:botPulse 1s infinite ease-in-out}.bot-typing span:nth-child(2){animation-delay:.15s}.bot-typing span:nth-child(3){animation-delay:.3s}
+        @keyframes botPulse{0%,80%,100%{opacity:.35;transform:translateY(0)}40%{opacity:1;transform:translateY(-2px)}}
 
         @media (max-width: 900px) {
             .top-bar {
@@ -654,6 +665,37 @@ if ($source !== '' && $destination !== '') {
     </section>
 </main>
 
+<button class="bot-fab" type="button" id="supportBotFab" aria-label="Open support assistant">
+    <i class="fa-solid fa-robot"></i>
+</button>
+<div class="bot-panel" id="supportBotPanel">
+    <div class="bot-title">
+        <div>
+            <div style="font-weight:800; font-size:1.05rem;">RailOps Assistant</div>
+            <div class="bot-chip">Quick support</div>
+        </div>
+        <button type="button" id="supportBotClose" style="border:none;background:none;color:#64748b;font-size:1.1rem;cursor:pointer;">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+    </div>
+    <div class="bot-thread" id="supportBotThread">
+        <div class="bot-bubble bot">
+            Type a quick question like <strong>cancel my ticket</strong>, <strong>show history</strong>, <strong>book train</strong>, <strong>seat issue</strong>, or <strong>login problem</strong>. I will keep the answer short and send you to the right place when needed.
+        </div>
+    </div>
+    <div class="bot-actions">
+        <button type="button" data-intent="cancel">I need to cancel a ticket</button>
+        <button type="button" data-intent="book">I want to book a new trip</button>
+        <button type="button" data-intent="history">Show my booking history</button>
+        <button type="button" data-intent="search">Take me to train search</button>
+    </div>
+    <div class="bot-input-wrap">
+        <input type="text" id="supportBotInput" class="bot-input" placeholder="Type your support question">
+        <button type="button" id="supportBotSend" class="bot-send">Send</button>
+    </div>
+    <div class="bot-status" id="supportBotStatus"></div>
+</div>
+
 <script>
 document.addEventListener('click', function() {
     const container = document.getElementById('profileCont');
@@ -689,6 +731,145 @@ async function refreshBookingStatuses() {
 }
 
 setInterval(refreshBookingStatuses, 4000);
+
+const botFab = document.getElementById('supportBotFab');
+const botPanel = document.getElementById('supportBotPanel');
+const botClose = document.getElementById('supportBotClose');
+const botThread = document.getElementById('supportBotThread');
+const botInput = document.getElementById('supportBotInput');
+const botSend = document.getElementById('supportBotSend');
+const botStatus = document.getElementById('supportBotStatus');
+
+function appendBotMessage(role, message) {
+    const bubble = document.createElement('div');
+    bubble.className = `bot-bubble ${role}`;
+    bubble.innerHTML = message;
+    botThread.appendChild(bubble);
+    botThread.scrollTop = botThread.scrollHeight;
+}
+
+function showTyping() {
+    botStatus.innerHTML = '<span class="bot-typing"><span></span><span></span><span></span></span> Assistant is typing';
+}
+
+function hideTyping() {
+    botStatus.textContent = '';
+}
+
+function resolveBotAction(intent) {
+    const actions = {
+        cancel: {
+            message: 'For cancellations, use the Help Center form with your transaction ID. I can take you there now.',
+            target: '#help-center'
+        },
+        book: {
+            message: 'For a new booking, the fastest route is the 2PL booking page. I can open it now.',
+            target: 'TwoPL/index.php'
+        },
+        history: {
+            message: 'Your confirmed and cancelled trips are listed in Booking History. I can jump there now.',
+            target: '#history'
+        },
+        search: {
+            message: 'The train search section is at the top of this dashboard. I can take you there now.',
+            target: '#top'
+        },
+        seat: {
+            message: 'Seat selection issues are usually caused by another user holding the seat or by a session timeout. Try reloading the booking flow and choosing a seat that is not marked held or booked.',
+            target: 'TwoPL/index.php'
+        },
+        login: {
+            message: 'If login is failing, first verify the correct passenger portal credentials. If you are already signed in but stuck, signing out and in again usually resets the session cleanly.',
+            target: 'login.php'
+        },
+        fallback: {
+            message: 'I can help best with booking, cancellations, seat issues, history, and login problems. Try asking one of those directly.',
+            target: ''
+        }
+    };
+
+    return actions[intent] || actions.fallback;
+}
+
+function detectIntent(text) {
+    const value = text.toLowerCase();
+    if (value.includes('cancel')) return 'cancel';
+    if (value.includes('book') || value.includes('ticket') || value.includes('train')) return 'book';
+    if (value.includes('history') || value.includes('my bookings') || value.includes('past')) return 'history';
+    if (value.includes('search') || value.includes('find train')) return 'search';
+    if (value.includes('seat') || value.includes('locked') || value.includes('hold') || value.includes('booking same')) return 'seat';
+    if (value.includes('login') || value.includes('sign in') || value.includes('password') || value.includes('session')) return 'login';
+    return 'fallback';
+}
+
+function performBotNavigation(target) {
+    if (!target) {
+        return;
+    }
+
+    setTimeout(() => {
+        if (target.startsWith('#')) {
+            if (target === '#top') {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                document.querySelector(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        } else {
+            window.location.href = target;
+        }
+    }, 700);
+}
+
+function handleBotIntent(intent, userText = '') {
+    if (userText) {
+        appendBotMessage('user', userText.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'));
+    }
+
+    showTyping();
+    const action = resolveBotAction(intent);
+
+    setTimeout(() => {
+        hideTyping();
+        appendBotMessage('bot', action.message);
+        performBotNavigation(action.target);
+    }, 550);
+}
+
+botFab.addEventListener('click', () => {
+    botPanel.classList.toggle('open');
+    if (botPanel.classList.contains('open')) {
+        botInput.focus();
+    }
+});
+
+botClose.addEventListener('click', () => {
+    botPanel.classList.remove('open');
+});
+
+document.querySelectorAll('[data-intent]').forEach((button) => {
+    button.addEventListener('click', () => {
+        handleBotIntent(button.dataset.intent);
+    });
+});
+
+function submitBotQuery() {
+    const value = botInput.value.trim();
+    if (!value) {
+        return;
+    }
+
+    const intent = detectIntent(value);
+    botInput.value = '';
+    handleBotIntent(intent, value);
+}
+
+botSend.addEventListener('click', submitBotQuery);
+botInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        submitBotQuery();
+    }
+});
 </script>
 
 </body>

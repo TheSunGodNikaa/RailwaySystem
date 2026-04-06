@@ -162,6 +162,10 @@ function railwayNormalizePassengerManifest($payload): array
         $name = trim((string) ($passenger['name'] ?? ''));
         $age = (int) ($passenger['age'] ?? 0);
         $isMilitary = strtoupper(trim((string) ($passenger['is_military'] ?? 'N')));
+        $isDisabled = strtoupper(trim((string) ($passenger['is_disabled'] ?? 'N')));
+        $disabilityCategory = strtoupper(trim((string) ($passenger['disability_category'] ?? '')));
+        $documentType = trim((string) ($passenger['document_type'] ?? ''));
+        $documentId = trim((string) ($passenger['document_id'] ?? ''));
         $gender = trim((string) ($passenger['gender'] ?? ''));
 
         if ($name === '' || $age < 0) {
@@ -173,6 +177,10 @@ function railwayNormalizePassengerManifest($payload): array
             'age' => $age,
             'gender' => $gender,
             'is_military' => $isMilitary === 'Y' ? 'Y' : 'N',
+            'is_disabled' => $isDisabled === 'Y' ? 'Y' : 'N',
+            'disability_category' => in_array($disabilityCategory, ['A', 'B', 'C'], true) ? $disabilityCategory : '',
+            'document_type' => $documentType,
+            'document_id' => $documentId,
             'sequence' => count($manifest) + 1,
         ];
     }
@@ -185,7 +193,7 @@ function railwayEncodePassengerManifest(array $manifest): string
     return json_encode(array_values($manifest), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '[]';
 }
 
-function railwayResolvePassengerDiscount(int $age, string $isMilitary = 'N'): array
+function railwayResolvePassengerDiscount(int $age, string $isMilitary = 'N', string $isDisabled = 'N', string $disabilityCategory = ''): array
 {
     $discountPercent = 0;
     $discountType = 'NONE';
@@ -211,6 +219,21 @@ function railwayResolvePassengerDiscount(int $age, string $isMilitary = 'N'): ar
         $discountLabel = 'Military concession';
     }
 
+    if (strtoupper($isDisabled) === 'Y') {
+        $category = strtoupper($disabilityCategory);
+        $disabilityCatalog = [
+            'A' => ['percent' => 25, 'label' => 'Disability Category A'],
+            'B' => ['percent' => 40, 'label' => 'Disability Category B'],
+            'C' => ['percent' => 50, 'label' => 'Disability Category C'],
+        ];
+
+        if (isset($disabilityCatalog[$category]) && $disabilityCatalog[$category]['percent'] > $discountPercent) {
+            $discountPercent = $disabilityCatalog[$category]['percent'];
+            $discountType = 'DISABILITY_' . $category;
+            $discountLabel = $disabilityCatalog[$category]['label'];
+        }
+    }
+
     return [
         'discount_percent' => $discountPercent,
         'discount_type' => $discountType,
@@ -220,7 +243,12 @@ function railwayResolvePassengerDiscount(int $age, string $isMilitary = 'N'): ar
 
 function railwayCalculatePassengerFare(float $baseFare, array $passenger): array
 {
-    $discount = railwayResolvePassengerDiscount((int) ($passenger['age'] ?? 0), (string) ($passenger['is_military'] ?? 'N'));
+    $discount = railwayResolvePassengerDiscount(
+        (int) ($passenger['age'] ?? 0),
+        (string) ($passenger['is_military'] ?? 'N'),
+        (string) ($passenger['is_disabled'] ?? 'N'),
+        (string) ($passenger['disability_category'] ?? '')
+    );
     $discountAmount = railwayRoundFare($baseFare * ($discount['discount_percent'] / 100));
     $finalFare = max(0, railwayRoundFare($baseFare - $discountAmount));
 
@@ -262,16 +290,26 @@ function railwayBuildPassengerSummary(array $passengers): string
 
     foreach ($passengers as $passenger) {
         $lines[] = sprintf(
-            '%s (Age %d%s) - %s - Rs. %0.2f',
+            '%s (Age %d%s%s) - %s - Rs. %0.2f',
             $passenger['name'],
             (int) $passenger['age'],
             ($passenger['is_military'] ?? 'N') === 'Y' ? ', Military' : '',
+            ($passenger['is_disabled'] ?? 'N') === 'Y' && !empty($passenger['disability_category']) ? ', Disability ' . $passenger['disability_category'] : '',
             $passenger['discount_label'] ?? 'Standard Fare',
             (float) ($passenger['final_fare'] ?? 0)
         );
     }
 
     return implode("\n", $lines);
+}
+
+function railwayGenerateBookingToken(): string
+{
+    try {
+        return 'BK' . strtoupper(bin2hex(random_bytes(8)));
+    } catch (Throwable $e) {
+        return 'BK' . strtoupper(substr(sha1(uniqid((string) mt_rand(), true)), 0, 16));
+    }
 }
 
 function railwayGetTrainClassAvailability($conn, $trainId): array

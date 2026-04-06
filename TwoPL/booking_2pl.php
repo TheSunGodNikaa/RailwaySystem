@@ -25,6 +25,7 @@ $seat_no_raw = trim($_POST['seat_no'] ?? '');
 $selectedSource = trim($_POST['source'] ?? ($_SESSION['active_booking']['source'] ?? ''));
 $selectedDestination = trim($_POST['destination'] ?? ($_SESSION['active_booking']['destination'] ?? ''));
 $passengerManifest = railwayNormalizePassengerManifest($_POST['passengers'] ?? ($_SESSION['active_booking']['passengers'] ?? []));
+$bookingToken = trim($_POST['booking_token'] ?? ($_SESSION['active_booking']['booking_token'] ?? ''));
 $train = railwayGetTrainById($conn, $train_id);
 $classCatalog = railwayGetClassCatalog((float) ($train['PRICE'] ?? 0));
 $classLabel = $classCatalog[$compartment]['label'] ?? $compartment;
@@ -41,7 +42,7 @@ if (count($seat_list) !== (int) $pricing['passenger_count']) {
     die("Seat selection count does not match the passenger count.");
 }
 
-$tid = "TXN" . rand(100000, 999999);
+$tid = $bookingToken !== '' ? $bookingToken : ("TXN" . rand(100000, 999999));
 $allLocked = true;
 
 foreach ($seat_list as $seat_no) {
@@ -108,7 +109,7 @@ railwayAppendMiqsmEvent('booking_confirmed', [
 ]);
 releaseLocks($conn, $tid);
 unset($_SESSION['pending_booking']);
-$_SESSION['active_booking']['passengers'] = $pricing['passengers'];
+unset($_SESSION['active_booking']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -116,6 +117,7 @@ $_SESSION['active_booking']['passengers'] = $pricing['passengers'];
     <meta charset="UTF-8">
     <title>Booking Confirmed | E-Ticket</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/support_bot.css">
     <style>
         :root{--primary:#2563eb;--success:#059669;--bg:#f8fafc;--line:#e2e8f0;--muted:#64748b}
         body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);margin:0;padding:40px;display:flex;flex-direction:column;align-items:center}
@@ -191,5 +193,17 @@ $_SESSION['active_booking']['passengers'] = $pricing['passengers'];
         <a href="../passenger.php#history" class="btn secondary">View Booking History</a>
         <button onclick="window.print()" class="btn primary">Print E-Ticket</button>
     </div>
+    <script src="../assets/support_bot.js"></script>
+    <script>
+        window.mountSupportBot({
+            pageName: 'the booking confirmation page',
+            bookingUrl: 'index.php',
+            loginUrl: '../login.php',
+            registerUrl: '../register.php',
+            historyTarget: '../passenger.php#history',
+            helpTarget: '../passenger.php#help-center',
+            searchTarget: '#top'
+        });
+    </script>
 </body>
 </html>

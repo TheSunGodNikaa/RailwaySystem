@@ -17,6 +17,7 @@ if (!$row || !password_verify($password, $row['PASSWORD'])) {
     die("Invalid username or password");
 }
 
+session_regenerate_id(true);
 $_SESSION['user_id'] = $row['USER_ID'];
 $_SESSION['username'] = $row['USERNAME'];
 $_SESSION['full_name'] = $row['FULL_NAME'];

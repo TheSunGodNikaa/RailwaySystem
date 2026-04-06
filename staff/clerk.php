@@ -16,7 +16,7 @@ $profile = oci_fetch_assoc($profileStmt) ?: ['FULL_NAME' => $username, 'EMAIL' =
 $stats_query = "
     SELECT
         (SELECT COUNT(*) FROM PASSENGER_BOOKING_HISTORY WHERE BOOKING_STATUS = 'CONFIRMED') AS total_bookings,
-        (SELECT NVL(SUM(TOTAL_AMOUNT), 0) FROM PASSENGER_BOOKING_HISTORY WHERE BOOKING_STATUS = 'CONFIRMED') AS total_revenue,
+        (SELECT NVL(SUM(CASE WHEN BOOKING_STATUS = 'CONFIRMED' THEN TOTAL_AMOUNT ELSE 0 END), 0) FROM PASSENGER_BOOKING_HISTORY) AS total_revenue,
         (SELECT COUNT(*) FROM LOCK_TABLE) AS active_locks,
         (SELECT COUNT(*) FROM USERS) AS total_users
     FROM DUAL
@@ -160,7 +160,7 @@ oci_execute($stid_locks);
 
     <section class="stats">
         <div class="stat"><div class="label">Confirmed Bookings</div><div class="value"><?php echo number_format((float)($stats['TOTAL_BOOKINGS'] ?? 0)); ?></div></div>
-        <div class="stat"><div class="label">Total Revenue</div><div class="value">Rs. <?php echo number_format((float)($stats['TOTAL_REVENUE'] ?? 0),2); ?></div></div>
+        <div class="stat"><div class="label">Net Revenue</div><div class="value">Rs. <?php echo number_format((float)($stats['TOTAL_REVENUE'] ?? 0),2); ?></div></div>
         <div class="stat"><div class="label">Active Locks</div><div class="value"><?php echo number_format((float)($stats['ACTIVE_LOCKS'] ?? 0)); ?></div></div>
         <div class="stat"><div class="label">Registered Users</div><div class="value"><?php echo number_format((float)($stats['TOTAL_USERS'] ?? 0)); ?></div></div>
     </section>

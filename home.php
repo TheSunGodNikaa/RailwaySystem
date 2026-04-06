@@ -125,6 +125,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     <title>RailOps | Premium Railway Experience</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="assets/support_bot.css">
     <style>
         :root {
             /* Default Dark Mode Variables */
@@ -1410,6 +1411,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         }
 
         routeSearchForm.addEventListener('submit', handleRouteSearch);
+    </script>
+    <script src="assets/support_bot.js"></script>
+    <script>
+        window.mountSupportBot({
+            pageName: 'the home page',
+            bookingUrl: 'TwoPL/index.php',
+            loginUrl: 'login.php',
+            registerUrl: 'register.php',
+            historyTarget: <?php echo $isLoggedIn ? json_encode('passenger.php#history') : json_encode('login.php?redirect=passenger.php'); ?>,
+            helpTarget: <?php echo $isLoggedIn ? json_encode('passenger.php#help-center') : json_encode('login.php?redirect=passenger.php%23help-center'); ?>,
+            searchTarget: '#top'
+        });
     </script>
 </body>
 </html>

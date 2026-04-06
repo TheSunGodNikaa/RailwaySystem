@@ -27,6 +27,7 @@ if ($username === "admin") {
         die("Invalid admin password");
     }
 
+    session_regenerate_id(true);
     $_SESSION['username'] = $username;
     $_SESSION['role'] = 'admin';
 
@@ -74,6 +75,7 @@ if ($row) {
         die("Invalid clerk password");
     }
 
+    session_regenerate_id(true);
     $_SESSION['username'] = $username;
     $_SESSION['role'] = 'clerk';
     railwayUpsertClerkLoginStatus($conn, $username, true);

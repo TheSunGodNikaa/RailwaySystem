@@ -1,0 +1,25 @@
+.support-bot-fab{position:fixed;right:24px;bottom:24px;width:62px;height:62px;border-radius:999px;border:none;background:#0f172a;color:#fff;box-shadow:0 20px 35px rgba(15,23,42,.2);cursor:pointer;z-index:2200}
+.support-bot-panel{position:fixed;right:24px;bottom:96px;width:360px;background:#fff;border:1px solid #e2e8f0;border-radius:24px;box-shadow:0 25px 45px rgba(15,23,42,.18);padding:20px;z-index:2200;display:none}
+.support-bot-panel.open{display:block}
+.support-bot-title{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.support-bot-chip{display:inline-flex;padding:6px 10px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:.72rem;font-weight:800}
+.support-bot-thread{display:grid;gap:12px;max-height:300px;overflow-y:auto;padding-right:4px;margin:14px 0}
+.support-bot-bubble{padding:12px 14px;border-radius:18px;font-size:.92rem;line-height:1.7}
+.support-bot-bubble.bot{background:#f8fafc;color:#1e293b;border:1px solid #e2e8f0;border-top-left-radius:8px}
+.support-bot-bubble.user{background:#0f172a;color:#fff;margin-left:46px;border-top-right-radius:8px}
+.support-bot-actions{display:grid;gap:10px;margin-top:12px}
+.support-bot-actions button{border:none;border-radius:14px;padding:12px 14px;text-align:left;background:#f8fafc;color:#1e293b;font-weight:700;cursor:pointer}
+.support-bot-actions button:hover{background:#eff6ff}
+.support-bot-input-wrap{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:14px}
+.support-bot-input{border:1px solid #dbe2ea;border-radius:14px;padding:12px 14px;font-size:.92rem;color:#1e293b}
+.support-bot-send{border:none;border-radius:14px;padding:12px 16px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}
+.support-bot-status{color:#64748b;font-size:.78rem;min-height:18px;margin-top:8px}
+.support-bot-typing{display:inline-flex;gap:5px;align-items:center}
+.support-bot-typing span{width:7px;height:7px;border-radius:999px;background:#94a3b8;animation:supportBotPulse 1s infinite ease-in-out}
+.support-bot-typing span:nth-child(2){animation-delay:.15s}
+.support-bot-typing span:nth-child(3){animation-delay:.3s}
+@keyframes supportBotPulse{0%,80%,100%{opacity:.35;transform:translateY(0)}40%{opacity:1;transform:translateY(-2px)}}
+@media (max-width:700px){
+  .support-bot-panel{right:14px;left:14px;bottom:88px;width:auto}
+  .support-bot-fab{right:14px;bottom:14px}
+}
